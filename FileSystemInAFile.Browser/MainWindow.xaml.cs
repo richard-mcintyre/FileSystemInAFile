@@ -24,20 +24,34 @@ public partial class MainWindow : Window
             new PropertyMetadata(null, (s, a) =>
             {
                 MainWindow wnd = (MainWindow)s;
+                FileSystemEntry entry = (FileSystemEntry)a.NewValue;
 
-                wnd.img.Source = new BitmapImage();
+                if (entry is not null && entry.IsFile)
+                {
+                    BitmapImage bm = new BitmapImage();
+                    bm.BeginInit();
+                    bm.CacheOption = BitmapCacheOption.OnLoad;
+                    bm.StreamSource = wnd._fileSystem.Open(System.IO.Path.Combine(entry.Path, entry.Name), FileSystemFileMode.Read);
+                    bm.EndInit();
+
+                    wnd.img.Source = bm;
+                }
+                else
+                {
+                    wnd.img.Source = null;
+                }
             }));
 
     public MainWindow()
     {
         InitializeComponent();
 
-        _fileSystem = FileSystem.Open(@"F:\Projects\FileSystemInAFile\FileSystemInAFile.App\bin\Debug\net9.0\test_8192.bin");
+        _fileSystem = FileSystem.OpenExisting(@"C:\git\FileSystemInAFile\rcmtest.bin");
 
         //ICollectionView view = CollectionViewSource.GetDefaultView(_entries);
         //view.SortDescriptions.Add(new SortDescription(".", ListSortDirection.Ascending));
 
-        ShowDirectoryContents(@"\");
+        ShowDirectoryContents(FileSystemPath.DirectorySeparatorChar.ToString());
 
         this.DataContext = this;
     }
@@ -77,12 +91,12 @@ public partial class MainWindow : Window
         {
             string path = _currentPath;
 
-            path = path.Substring(0, path.LastIndexOf(@"\") + 1);
+            path = FileSystemPath.GetDirectoryName(path);
             ShowDirectoryContents(path);
         }
         else
         {
-            ShowDirectoryContents(System.IO.Path.Combine(_currentPath, entry.Name));
+            ShowDirectoryContents(FileSystemPath.Combine(_currentPath, entry.Name));
         }
     }
 
@@ -92,7 +106,7 @@ public partial class MainWindow : Window
 
         _entries.Clear();
 
-        if (path != @"\")
+        if (path != FileSystemPath.DirectorySeparatorChar.ToString())
             _entries.Add(new FileSystemEntry(path, "..", false, 0));
 
         foreach (FileSystemEntry entry in _fileSystem.GetDirectoryContents(_currentPath).OrderBy(o => o.Name))

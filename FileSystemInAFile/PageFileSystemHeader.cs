@@ -72,7 +72,18 @@ internal class PageFileSystemHeader : Page
         });
     }
 
-    protected internal override Span<byte> AsSpan() => Array.Empty<byte>();
+    protected internal override Span<byte> AsSpan()
+    {
+        byte[] buffer = _contentsPool.Rent();
+        MemoryMarshal.Write(buffer, new Header()
+        {
+            PageSize = this.PageSize,
+            RootDirectoryPageId = this.RootDirectoryPageId,
+            FirstAllocationPageId = this.FirstAllocationPageId
+        });
+
+        return buffer;
+    }
 
     #endregion
 }

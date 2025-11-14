@@ -57,16 +57,9 @@ internal class PageFileData : Page
         });
     }
 
-    public void WriteData(Stream stream)
-    {
-        Span<byte> data = GetFileDataSpan();
+    public ReadOnlySpan<byte> GetFileDataSpan() => InternalGetFileDataSpan();
 
-        _ = stream.Read(data);
-
-        this.IsDirty = true;
-    }
-
-    private Span<byte> GetFileDataSpan() => AsSpan().Slice(PageFileData.HeaderSize);
+    internal Span<byte> InternalGetFileDataSpan() => AsSpan().Slice(PageFileData.HeaderSize);
 
     protected internal override Span<byte> AsSpan() => _contents;
 

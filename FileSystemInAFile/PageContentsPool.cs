@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,27 +20,15 @@ internal class PageContentsPool
     #region Fields
 
     private readonly ushort _pageSize;
-    private readonly Queue<byte[]> _pool = new Queue<byte[]>();
+    private readonly ArrayPool<byte> _pool = ArrayPool<byte>.Shared;
 
     #endregion
 
     #region Methods
 
-    public byte[] Rent()
-    {
-        if (_pool.Count == 0)
-            return new byte[_pageSize];
-        
-        byte[] contents = _pool.Dequeue();
-        Array.Clear(contents);
+    public byte[] Rent() => _pool.Rent(_pageSize);
 
-        return contents;
-    }
-
-    public void Return(byte[] data)
-    {
-        _pool.Enqueue(data);
-    }
+    public void Return(byte[] data) => _pool.Return(data);
 
     #endregion
 }

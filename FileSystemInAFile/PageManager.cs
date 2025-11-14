@@ -93,22 +93,26 @@ internal class PageManager : IDisposable
         }
     }
 
-    public IEnumerable<T> AllocateNewPages<T>(PageKind kind, long pageCount)
+    public T[] AllocateNewPages<T>(PageKind kind, long pageCount, uint previousPageId = 0)
         where T : Page
     {
         if (pageCount == 0)
-            yield break;
+            return Array.Empty<T>();
 
-        Page prevPage = AllocateNewPage<T>(kind, 0);
-        yield return (T)prevPage;
+        List<T> pages = new List<T>();
 
-        for (long i = 0; i < pageCount; i++)
+        Page prevPage = AllocateNewPage<T>(kind, previousPageId);
+        pages.Add((T)prevPage);
+
+        for (long i = 1; i < pageCount; i++)
         {
             Page page = AllocateNewPage<T>(kind, prevPage.Id);
             prevPage = page;
 
-            yield return (T)page;
+            pages.Add((T)page);
         }
+
+        return pages.ToArray();
     }
 
     public T AllocateNewPage<T>(PageKind kind, uint previousPageId = 0)
@@ -177,10 +181,54 @@ internal class PageManager : IDisposable
         }
 
         allocatedPage.IsDirty = true;
-        _pageCache.Add(allocatedPage.Id, allocatedPage);
+        _pageCache[allocatedPage.Id] = allocatedPage;
 
         return (allocatedPage as T)!;
     }
+
+    public void FreePageChain(uint fromPageId)
+    {
+        IEnumerable<PageAllocation> allocPageChain = GetPageChain<PageAllocation>(this.FirstAllocationPageId).ToArray();
+
+        while (fromPageId != 0)
+        {
+            uint nextPageId = GetPage<Page>(fromPageId)!.GetNextPageId();
+
+            // Determine which allocation page we should be updating
+            uint basePageId = 0;
+            foreach (PageAllocation pageAlloc in allocPageChain)
+            {
+                if (fromPageId >= basePageId && fromPageId < basePageId + pageAlloc.MaxNumberOfPages)
+                {
+                    uint offsetPageId = fromPageId - basePageId;
+                    pageAlloc.MarkPageAsFree(offsetPageId);
+                    break;
+                }
+
+                basePageId += pageAlloc.MaxNumberOfPages;
+            }
+
+            fromPageId = nextPageId;
+        }
+    }
+
+    public bool IsPageFree(uint pageId)
+    {
+        IEnumerable<PageAllocation> allocPageChain = GetPageChain<PageAllocation>(this.FirstAllocationPageId).ToArray();
+        uint basePageId = 0;
+        foreach (PageAllocation pageAlloc in allocPageChain)
+        {
+            if (pageId >= basePageId && pageId < basePageId + pageAlloc.MaxNumberOfPages)
+            {
+                uint offsetPageId = pageId - basePageId;
+                return pageAlloc.IsPageFree(offsetPageId);
+            }
+
+            basePageId += pageAlloc.MaxNumberOfPages;
+        }
+        return false;
+    }
+
 
     private PageFileSystemHeader ReadFileSystemHeaderPageAndInitializeContentsPool()
     {
@@ -197,6 +245,9 @@ internal class PageManager : IDisposable
 
     private Page ReadPage(uint pageId)
     {
+        if (pageId == 0)
+            return _fileSystemHeaderPage;
+
         byte[] contents;
 
         checked

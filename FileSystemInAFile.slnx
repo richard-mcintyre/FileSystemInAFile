@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/CLI/">
+    <Project Path="FsCopy/FsCopy.csproj" Id="1628cee9-abb9-4f4a-b5c5-7d8cc2cd7b61" />
+    <Project Path="FsDel/FsDel.csproj" Id="5815e8c5-1cd6-47a0-ae80-1757ecfd14a0" />
+    <Project Path="FsDir/FsDir.csproj" Id="10701917-8313-4ca9-876f-e471a3b50a01" />
+    <Project Path="FsPageDump/FsPageDump.csproj" Id="fa90825f-8935-4f05-8f45-76514357f844" />
+  </Folder>
+  <Project Path="FileSystemInAFile.Browser/FileSystemInAFile.Browser.csproj" />
+  <Project Path="FileSystemInAFile.Tests/FileSystemInAFile.Tests.csproj" />
+  <Project Path="FileSystemInAFile/FileSystemInAFile.csproj" />
+</Solution>

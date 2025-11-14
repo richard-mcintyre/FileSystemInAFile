@@ -16,8 +16,9 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition />
-            <RowDefinition />
+            <RowDefinition MinHeight="100" />
+            <RowDefinition Height="5" /> <!-- Splitter row -->
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         
         <Menu Grid.Row="0">
@@ -31,7 +32,9 @@
                  SelectedItem="{Binding SelectedItem}"
                  MouseDoubleClick="ListBox_MouseDoubleClick" />
 
-        <Image Grid.Row="2" x:Name="img" />
+        <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Gray" ShowsPreview="True" />
+
+        <Image Grid.Row="3" x:Name="img" Stretch="Uniform" />
     </Grid>
     
 </Window>

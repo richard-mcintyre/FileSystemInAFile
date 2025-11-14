@@ -62,7 +62,7 @@ internal class PageDirectory : Page
 
     #region Fields
 
-    public const int MaxEntryNameByteSize = 128;     // Since we are using UTF16 it should be a multiple of two
+    public const int MaxEntryNameByteSize = 256;     // Since we are using UTF16 it should be a multiple of two
 
     private static int HeaderSize = Marshal.SizeOf<Header>();
     private static int EntrySize = Marshal.SizeOf<Entry>();
@@ -117,6 +117,33 @@ internal class PageDirectory : Page
         return entry;
     }
 
+    public void RemoveEntry(DirectoryEntry entry)
+    {
+        DirectoryEntry[] existingEntries = GetExistingEntries();
+        UpdateContentsWithEntries(existingEntries.Where(o => !String.Equals(o.Name, entry.Name, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public void UpdateFirstPageIdAndFileSize(string name, uint pageId, ulong fileSize)
+    {
+        DirectoryEntry[] existingEntries = GetExistingEntries();
+
+        bool updated = false;
+        for(int i=0;i<existingEntries.Length;i++)
+        {
+            DirectoryEntry entry = existingEntries[i];
+            if (String.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                existingEntries[i] = entry with { FirstPageId = pageId, FileSize = fileSize };
+                updated = true;
+            }
+        }
+
+        if (!updated)
+            throw new Exception($"Directory entry {name} was not found");
+
+        UpdateContentsWithEntries(existingEntries);
+    }
+
     unsafe public DirectoryEntry[] GetExistingEntries()
     {
         byte[] buf = new byte[EntrySize];
@@ -162,6 +189,11 @@ internal class PageDirectory : Page
 
     public static bool IsEntryNameValid(string name) =>
         !String.IsNullOrWhiteSpace(name) &&
+        !name.Contains(FileSystemPath.DirectorySeparatorChar) &&
+        !name.Contains('^') &&
+        !name.Contains('*') &&
+        !name.Contains('?') &&
+        !name.Contains('/') &&
         Encoding.Unicode.GetByteCount(name.Trim()) < MaxEntryNameByteSize;
 
     private ushort GetUsedEntries()

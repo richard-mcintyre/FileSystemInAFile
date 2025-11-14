@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
@@ -12,6 +14,7 @@ public class FileSystem : IDisposable
 
     private FileSystem(Stream stream)
     {
+        _stream = stream;
         _pageManager = new PageManager(stream);
     }
 
@@ -22,10 +25,18 @@ public class FileSystem : IDisposable
 
     #region Fields
 
-    private const ushort MinPageSize = 512;
+    private const ushort MinPageSize = 1024;
     private const ushort MaxPageSize = 65535;
 
+    private readonly Stream _stream;
     private readonly PageManager _pageManager;
+    private bool _isDisposed;
+
+    #endregion
+
+    #region Properties
+
+    internal PageManager PageManager => _pageManager;
 
     #endregion
 
@@ -47,64 +58,271 @@ public class FileSystem : IDisposable
             stream.Write(data.Span);
         }
 
-        return FileSystem.Open(path);
+        return OpenExisting(path);
     }
 
-    public static FileSystem Open(string path)
+    public static FileSystem OpenExisting(string path)
     {
         Stream stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
         return new FileSystem(stream);
     }
 
-    public void WriteFile(string path, Stream stream)
+    public Stream Open(string path, FileSystemFileMode mode)
     {
-        string fileName = Path.GetFileName(path);
-        path = Path.GetDirectoryName(path)!;
+        EnsureNotDisposed();
 
-        if (!PageDirectory.IsEntryNameValid(fileName))
-            throw new Exception($"Invalid file name: {fileName}");
+        if (path.StartsWith('$'))
+            return OpenSpecial(path);
+
+        EnsurePathIsValid(path);
+
+        string fileName = FileSystemPath.GetFileName(path);
+        path = FileSystemPath.GetDirectoryName(path);
 
         IEnumerable<PageDirectory>? parentDirectoryPages = GetPageDirectoryChainForPath(path);
         if (parentDirectoryPages is null)
-            throw new Exception($"Invalid path {path}");
+            throw new Exception($"Path '{path}' does not exist");
 
         // Check if a directory or file already exists with the same name
-        DirectoryEntry? dirEntry = parentDirectoryPages
-            .Select(o => o.GetExistingEntries())
-            .SelectMany(o => o)
-            .FirstOrDefault(o => String.Equals(fileName, o.Name));
-
-        if (dirEntry is not null)
-            throw new Exception($"File {fileName} already exists");
-
-        // Find a page with space for an entry
-        PageDirectory? pageDirectory = parentDirectoryPages.FirstOrDefault(o => o.HasFreeEntries);
-        if (pageDirectory is null)
+        PageDirectory? pageDirectory = null;
+        DirectoryEntry? dirEntry = null;
+        foreach (PageDirectory curPageDir in parentDirectoryPages)
         {
-            // all the pages are full of entries, allocate a new directory page
-            pageDirectory = _pageManager.AllocateNewPage<PageDirectory>(
-                PageKind.Directory, previousPageId: parentDirectoryPages.Last().Id);
+            dirEntry = curPageDir
+                .GetExistingEntries()
+                .FirstOrDefault(o => String.Equals(fileName, o.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (dirEntry is not null)
+            {
+                pageDirectory = curPageDir;
+                break;
+            }
         }
 
-        // Determine how many pages we need to allocate for the file data
-        long filePageCount = stream.Length / (_pageManager.PageSize - PageFileData.HeaderSize);
-        if (stream.Length % (_pageManager.PageSize - PageFileData.HeaderSize) != 0)
-            filePageCount++;
-
-        IEnumerable<PageFileData> filePageChain = _pageManager.AllocateNewPages<PageFileData>(PageKind.FileData, filePageCount);
-        foreach (PageFileData pageFileData in filePageChain)
+        if ((mode & FileSystemFileMode.CreateNew) != 0)
         {
-            pageFileData.WriteData(stream);
+            if (dirEntry is not null)
+                throw new Exception($"File {fileName} already exists");
+
+            // Find a page with space for an entry
+            pageDirectory = parentDirectoryPages.FirstOrDefault(o => o.HasFreeEntries);
+            if (pageDirectory is null)
+            {
+                // all the pages are full of entries, allocate a new directory page
+                pageDirectory = _pageManager.AllocateNewPage<PageDirectory>(
+                    PageKind.Directory, previousPageId: parentDirectoryPages.Last().Id);
+            }
+
+            // Add the directory entry
+            dirEntry = pageDirectory.AddFileEntry(fileName, pageId: 0, fileSize: 0);
+        }
+        else
+        {
+            if (dirEntry is null)
+                throw new Exception($"File {fileName} does not exist");
         }
 
-        // Add the directory entry
-        pageDirectory.AddFileEntry(fileName, filePageChain.First().Id, (ulong)stream.Length);
+        return new FileSystemStream(this, mode, pageDirectory!.Id, dirEntry);
+    }
 
-        _pageManager.Flush();
+    private Stream OpenSpecial(string path)
+    {
+        EnsureNotDisposed();
+
+        if (String.Equals(path, SpecialFileNames.FileSystemInfo, StringComparison.Ordinal))
+        {
+            string data = JsonSerializer.Serialize(new
+            {
+                TotalPages = GetPageCount(),
+                PageSize = _pageManager.PageSize
+            });
+            
+            return new MemoryStream(Encoding.UTF8.GetBytes(data), writable: false);
+        }
+
+        if (path.StartsWith(SpecialFileNames.PageInfo, StringComparison.Ordinal))
+        {
+            uint pageId = UInt32.Parse(path.Substring(SpecialFileNames.PageInfo.Length));
+
+            Page page = _pageManager.GetPage(pageId) 
+                ?? throw new Exception($"Page {pageId} does not exist");
+
+            string data = JsonSerializer.Serialize(new
+            {
+                Id = page.Id,
+                Kind = page.Kind.ToString(),
+                NextPageId = page.NextPageId,
+                IsFree = _pageManager.IsPageFree(page.Id),
+            });
+
+            return new MemoryStream(Encoding.UTF8.GetBytes(data), writable: false);
+        }
+
+        if (path.StartsWith(SpecialFileNames.PageContents, StringComparison.Ordinal))
+        {
+            uint pageId = UInt32.Parse(path.Substring(SpecialFileNames.PageContents.Length));
+
+            Page page = _pageManager.GetPage(pageId)
+                ?? throw new Exception($"Page {pageId} does not exist");
+
+            return new MemoryStream(page.AsSpan().ToArray(), writable: false);
+        }
+
+        throw new Exception($"File {path} does not exist");
+    }
+
+    public void Delete(string path)
+    {
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
+
+        string fileName = FileSystemPath.GetFileName(path);
+        path = FileSystemPath.GetDirectoryName(path);
+
+        IEnumerable<PageDirectory>? parentDirectoryPages = GetPageDirectoryChainForPath(path);
+        if (parentDirectoryPages is null)
+            throw new Exception($"Path '{path}' does not exist");
+
+        // Check if a directory or file already exists with the same name
+        PageDirectory? pageDirectory = null;
+        DirectoryEntry? dirEntry = null;
+        foreach (PageDirectory curPageDir in parentDirectoryPages)
+        {
+            dirEntry = curPageDir
+                .GetExistingEntries()
+                .FirstOrDefault(o => String.Equals(fileName, o.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (dirEntry is not null)
+            {
+                pageDirectory = curPageDir;
+                break;
+            }
+        }
+
+        if (dirEntry is null)
+            throw new Exception($"File {fileName} does not exist");
+
+        if (!dirEntry.IsFile)
+            throw new Exception($"Path {path} is a directory");
+
+        pageDirectory!.RemoveEntry(dirEntry);
+        _pageManager.FreePageChain(dirEntry.FirstPageId);
+    }
+
+    public void DeleteDirectory(string path)
+    {
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
+
+        string fileName = FileSystemPath.GetFileName(path);
+        path = FileSystemPath.GetDirectoryName(path);
+
+        IEnumerable<PageDirectory>? parentDirectoryPages = GetPageDirectoryChainForPath(path);
+        if (parentDirectoryPages is null)
+            throw new Exception($"Path '{path}' does not exist");
+
+        // Check if a directory or file already exists with the same name
+        PageDirectory? pageDirectory = null;
+        DirectoryEntry? dirEntry = null;
+        foreach (PageDirectory curPageDir in parentDirectoryPages)
+        {
+            dirEntry = curPageDir
+                .GetExistingEntries()
+                .FirstOrDefault(o => String.Equals(fileName, o.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (dirEntry is not null)
+            {
+                pageDirectory = curPageDir;
+                break;
+            }
+        }
+
+        if (dirEntry is null)
+            throw new Exception($"Directory {fileName} does not exist");
+
+        if (dirEntry.IsFile)
+            throw new Exception($"Path {path} is a file");
+
+        pageDirectory!.RemoveEntry(dirEntry);
+        _pageManager.FreePageChain(dirEntry.FirstPageId);
+    }
+
+    public bool FileExists(string path)
+    {
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
+
+        string fileName = FileSystemPath.GetFileName(path);
+        path = FileSystemPath.GetDirectoryName(path);
+
+        IEnumerable<PageDirectory>? parentDirectoryPages = GetPageDirectoryChainForPath(path);
+        if (parentDirectoryPages is null)
+            throw new Exception($"Path '{path}' does not exist");
+
+        // Check if a directory or file already exists with the same name
+        PageDirectory? pageDirectory = null;
+        DirectoryEntry? dirEntry = null;
+        foreach (PageDirectory curPageDir in parentDirectoryPages)
+        {
+            dirEntry = curPageDir
+                .GetExistingEntries()
+                .FirstOrDefault(o => String.Equals(fileName, o.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (dirEntry is not null)
+            {
+                pageDirectory = curPageDir;
+                break;
+            }
+        }
+
+        if (dirEntry is null)
+            return false;
+
+        return dirEntry.IsFile;
+    }
+
+    public bool DirectoryExists(string path)
+    {
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
+
+        if(path.Length == 1 && path[0] == FileSystemPath.DirectorySeparatorChar)
+            return true;
+
+        string fileName = FileSystemPath.GetFileName(path);
+        path = FileSystemPath.GetDirectoryName(path);
+
+        IEnumerable<PageDirectory>? parentDirectoryPages = GetPageDirectoryChainForPath(path);
+        if (parentDirectoryPages is null)
+            throw new Exception($"Path '{path}' does not exist");
+
+        // Check if a directory or file already exists with the same name
+        PageDirectory? pageDirectory = null;
+        DirectoryEntry? dirEntry = null;
+        foreach (PageDirectory curPageDir in parentDirectoryPages)
+        {
+            dirEntry = curPageDir
+                .GetExistingEntries()
+                .FirstOrDefault(o => String.Equals(fileName, o.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (dirEntry is not null)
+            {
+                pageDirectory = curPageDir;
+                break;
+            }
+        }
+
+        if (dirEntry is null)
+            return false;
+
+        return !dirEntry.IsFile;
     }
 
     public IEnumerable<FileSystemEntry> GetDirectoryContents(string path)
     {
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
+
         IEnumerable<PageDirectory>? pages = GetPageDirectoryChainForPath(path);
         if (pages is null)
             throw new Exception($"Path does not exist: {path}");
@@ -117,23 +335,16 @@ public class FileSystem : IDisposable
 
     public void CreateDirectory(string path)
     {
-        if (path.Length == 0 || path[0] != '\\')
-            throw new Exception($"Invalid path: {path}");
+        EnsureNotDisposed();
+        EnsurePathIsValid(path);
 
-        if (path == @"\")
+        if (path.Length == 1 && path[0] == FileSystemPath.DirectorySeparatorChar)
             return;
-
-        string[] nameList = path.Substring(1).Split('\\');
-        foreach (string name in nameList)
-        {
-            if (!PageDirectory.IsEntryNameValid(name))
-                throw new Exception($"Invalid directory name: {name}");
-        }
 
         // Get the pages for the root directory
         IEnumerable<PageDirectory> parentDirectoryPages = _pageManager.GetPageChain<PageDirectory>(_pageManager.RootDirectoryPageId);
 
-        foreach (string name in nameList)
+        foreach (string name in FileSystemPath.SplitPath(path))
         {
             // Check if the directory already exists
             DirectoryEntry? dirEntry = parentDirectoryPages
@@ -173,12 +384,10 @@ public class FileSystem : IDisposable
         // Get the pages for the root directory
         IEnumerable<PageDirectory> parentDirectoryPages = _pageManager.GetPageChain<PageDirectory>(_pageManager.RootDirectoryPageId);
 
-        if (String.Equals(path.Trim(), "\\", StringComparison.Ordinal))
+        if (path.Length == 1 && path[0] == FileSystemPath.DirectorySeparatorChar)
             return parentDirectoryPages;
 
-        string[] nameList = path.Substring(1).Split('\\');
-
-        foreach (string name in nameList)
+        foreach (string name in FileSystemPath.SplitPath(path))
         {
             // Check if the directory already exists
             DirectoryEntry? dirEntry = parentDirectoryPages
@@ -198,6 +407,24 @@ public class FileSystem : IDisposable
         return parentDirectoryPages;
     }
 
+    private uint GetPageCount()
+    {
+        EnsureNotDisposed();
+        return (uint)(_stream.Length / _pageManager.PageSize);
+    }
+
+    private void EnsurePathIsValid(string path)
+    {
+        if (!FileSystemPath.IsPathAbsolute(path) || !FileSystemPath.IsPathValid(path))
+            throw new InvalidPathException(path);
+    }
+
+    private void EnsureNotDisposed()
+    {
+        if(_isDisposed)
+            throw new ObjectDisposedException(nameof(FileSystem));
+    }
+
     public void Dispose()
     {
         Dispose(true);
@@ -207,7 +434,12 @@ public class FileSystem : IDisposable
     private void Dispose(bool disposing)
     {
         if (disposing)
-            _pageManager.Dispose();
+        {
+            _pageManager?.Flush();
+            _pageManager?.Dispose();
+
+            _isDisposed = true;
+        }
     }
 
     #endregion

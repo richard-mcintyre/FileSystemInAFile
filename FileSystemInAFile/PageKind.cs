@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FileSystemInAFile;
-internal enum PageKind
+public enum PageKind
 {
     FileSystemHeader = 1,
     Allocation = 2,
