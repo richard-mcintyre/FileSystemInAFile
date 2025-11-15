@@ -2,6 +2,6 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Fs.Cli.Common;
+namespace Fs.Cli.Common.Options;
 
 public record class OptionDefinition(OptionKind Kind, string Name, string Description);

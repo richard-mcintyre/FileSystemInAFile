@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using FileSystemInAFile;
-using Fs.Cli.Common;
+using Fs.Cli.Common.Options;
 
 namespace FsPageDump;
 

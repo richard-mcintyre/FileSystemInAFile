@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualBasic.FileIO;
 
-namespace Fs.Cli.Common;
+namespace Fs.Cli.Common.Options;
 
 public class OptionDefinitions : List<OptionDefinition>
 {

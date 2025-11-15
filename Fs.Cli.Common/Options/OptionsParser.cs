@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Fs.Cli.Common;
+namespace Fs.Cli.Common.Options;
 
 public class OptionsParser
 {

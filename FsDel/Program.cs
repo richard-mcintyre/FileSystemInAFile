@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using FileSystemInAFile;
-using Fs.Cli.Common;
+using Fs.Cli.Common.Options;
 
 namespace FsDel;
 

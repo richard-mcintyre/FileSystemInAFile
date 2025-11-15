@@ -15,11 +15,11 @@ internal class HelpCommand : CommandBaseNoOptions
     {
         int maxCommandNameLength = Program.Commands.Max(o => o.Name.Length);
 
-        Console.WriteLine();
-        Console.WriteLine("Available commands:");
+        settings.StdOut.WriteLine();
+        settings.StdOut.WriteLine("Available commands:");
         foreach (ICommand command in Program.Commands.OrderBy(o => o.Name))
         {
-            Console.WriteLine($"   {command.Name.PadRight(maxCommandNameLength)} - {command.Description}");
+            settings.StdOut.WriteLine($"   {command.Name.PadRight(maxCommandNameLength)} - {command.Description}");
         }
 
         return default;

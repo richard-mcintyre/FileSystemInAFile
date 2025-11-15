@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json.Serialization;
-using Fs.Cli.Common;
+using Fs.Cli.Common.Json;
 
 namespace FsPageDump;
 

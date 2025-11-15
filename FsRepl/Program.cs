@@ -40,9 +40,11 @@ internal class Program
     {
         _fs = initialFileSystem;
 
-        Console.WriteLine("FsRepl - File System In A File REPL");
-        Console.WriteLine("Type 'help' to see available commands.");
-        Console.WriteLine();
+        AnsiTextWriter stdout = new AnsiTextWriter(Console.Out);
+
+        stdout.WriteLine($"{AnsiHelper.FgColor(AnsiFgColors.BrightYellow)}FsRepl - File System In A File REPL{AnsiHelper.Reset}");
+        stdout.WriteLine($"{AnsiHelper.FgColor(AnsiFgColors.BrightYellow)}Type 'help' to see available commands.{AnsiHelper.Reset}");
+        stdout.WriteLine();              
 
         CommandResults? commandResults = null;
         while (true)
@@ -50,7 +52,7 @@ internal class Program
             if (commandResults?.LaunchDebugger == true)
                 System.Diagnostics.Debugger.Launch();
 
-            Console.Write(GetPrompt());
+            stdout.Write(GetPrompt());
             string? input = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(input))
                 continue;
@@ -67,6 +69,7 @@ internal class Program
                     commandResults = command.Execute(new ExecuteSettings()
                     {
                         FileSystem = _fs,
+                        StdOut = stdout
                     }, commandArgs);
 
                     if (commandResults is not null)
@@ -81,15 +84,15 @@ internal class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"{ex.GetType()}: {ex.Message}");
+                    stdout.WriteLine($"{ex.GetType()}: {ex.Message}");
                 }
             }
             else
             {
-                Console.WriteLine($"Unknown command: {commandName}");
+                stdout.WriteLine($"Unknown command: {commandName}");
             }
 
-            Console.WriteLine();
+            stdout.WriteLine();
         }
     }
 
@@ -114,7 +117,7 @@ internal class Program
         StringBuilder prompt = new StringBuilder();
         if (_fs is not null)
         {
-            prompt.Append($"[{Path.GetFileName(_fs.Path)}]");
+            prompt.Append($"{AnsiHelper.FgColor(AnsiFgColors.BrightGreen)}[{Path.GetFileName(_fs.Path)}]{AnsiHelper.Reset}");
         }
         prompt.Append("> ");
         return prompt.ToString();

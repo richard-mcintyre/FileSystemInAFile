@@ -36,30 +36,30 @@ internal class FsInfoCommand : CommandBase<FsInfoCommand.CommandOptions>
 
             if (options.Raw)
             {
-                Console.WriteLine(rawInfo);
+                settings.StdOut.WriteLine(rawInfo);
                 return null;
             }
 
             if (options.PrettyRaw)
             {
-                Console.WriteLine(JsonUtils.FormatJson(rawInfo));
+                settings.StdOut.WriteLine(JsonUtils.FormatJson(rawInfo));
                 return null;
             }
 
             JsonElement rootInfo = JsonDocument.Parse(rawInfo).RootElement;
 
-            Console.WriteLine("File System Information:");
-            Console.WriteLine($" - Path         : {fs.Path}");
+            settings.StdOut.WriteLine("File System Information:");
+            settings.StdOut.WriteLine($" - Path         : {fs.Path}");
 
             JsonElement jsonElement;
             if (rootInfo.TryGetProperty("FileSize", out jsonElement))
-                Console.WriteLine($" - Size         : {jsonElement.GetInt64():N0}");
+                settings.StdOut.WriteLine($" - Size         : {jsonElement.GetInt64():N0}");
 
             if (rootInfo.TryGetProperty("TotalPages", out jsonElement))
-                Console.WriteLine($" - Total Pages  : {jsonElement.GetInt64():N0}");
+                settings.StdOut.WriteLine($" - Total Pages  : {jsonElement.GetInt64():N0}");
 
             if (rootInfo.TryGetProperty("PageSize", out jsonElement))
-                Console.WriteLine($" - Page Size    : {jsonElement.GetInt64():N0}");
+                settings.StdOut.WriteLine($" - Page Size    : {jsonElement.GetInt64():N0}");
         }
 
         return null;

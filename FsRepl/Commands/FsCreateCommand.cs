@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json.Serialization;
 using FileSystemInAFile;
-using Fs.Cli.Common;
+using Fs.Cli.Common.Json;
 
 namespace FsRepl.Commands;
 
@@ -28,7 +28,7 @@ internal class FsCreateCommand : CommandBase<FsCreateCommand.CommandOptions>
     {
         string path = Path.GetFullPath(options.Path);
 
-        Console.WriteLine($"Creating {path}...");
+        settings.StdOut.WriteLine($"Creating {path}...");
 
         FileSystem? fs = null;
         if (options.PageSize.HasValue)

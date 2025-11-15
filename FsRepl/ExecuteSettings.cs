@@ -8,4 +8,6 @@ namespace FsRepl;
 internal class ExecuteSettings
 {
     public required FileSystem? FileSystem{ get; init; }
+
+    public required TextWriter StdOut { get; init; }
 }
