@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FileSystemInAFile\FileSystemInAFile.csproj" />
+    <ProjectReference Include="..\Fs.Cli.Common\Fs.Cli.Common.csproj" />
   </ItemGroup>
 
 </Project>

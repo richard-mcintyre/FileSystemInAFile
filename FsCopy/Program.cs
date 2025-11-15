@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Text.RegularExpressions;
 using FileSystemInAFile;
+using Fs.Cli.Common;
 
 namespace FsCopy;
 
@@ -10,37 +10,41 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        if (args.Length < 3)
+        OptionDefinitions optionDefs = new OptionDefinitions();
+        optionDefs.AddUnnamed("FsPath", "Path to the File System file.");
+        optionDefs.AddUnnamed("SourcePath", "Path to the file in the local file system to copy.");
+        optionDefs.AddUnnamed("TargetPath", "Path to the file in the File System file to copy the file to .");
+        optionDefs.AddNamed("s", "Include subdirectories.");
+        optionDefs.AddNamedWithValue("PageSize", "Page size to use when creating a new File System file.  Default is 8192.");
+
+        ProgramArgs? pargs = OptionsParser.TryParse<ProgramArgs>(optionDefs, args);
+        if (pargs is null || !pargs.IsValid())
         {
-            Console.WriteLine("USAGE: fscopy <fs_filename> <source_path> <target_path> <options>");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            Console.WriteLine("  /s                  Include subdirectories");
-            Console.WriteLine("  /pagesize=<size>    Specify page size");
+            optionDefs.PrintUsage("FsCopy");
             return;
         }
 
-        string fsFileName = args[0];
-        string sourcePath = Path.GetFullPath(args[1]);
-        string targetPath = args[2];
-        
+        Run(pargs);
+    }
+
+    private static void Run(ProgramArgs args)
+    {
+        string sourcePath = args.SourcePath;
+
         // If the sourcePath is a directory, then we will modifying it to include all files in that directory
         if (Directory.Exists(sourcePath))
             sourcePath = Path.Combine(sourcePath, "*");
 
-        if (!Path.Exists(fsFileName))
+        if (!Path.Exists(args.FsPath))
         {
-            ushort pageSize = TryGetOptionValue(args, "/pagesize", 8192);
-            FileSystem.CreateNew(fsFileName, pageSize).Dispose();
+            FileSystem.CreateNew(args.FsPath, args.PageSize).Dispose();
         }
 
-        using (FileSystem fs = FileSystem.OpenExisting(fsFileName))
+        using (FileSystem fs = FileSystem.OpenExisting(args.FsPath))
         {
-            bool includeSubDirectories = HasOption(args, "/s");
-
-            foreach (string sourceFile in GetFileNames(sourcePath, includeSubDirectories))
+            foreach (string sourceFile in GetFileNames(sourcePath, args.IncludeSubdirectories))
             {
-                string targetFile = FileSystemPath.Combine(targetPath, 
+                string targetFile = FileSystemPath.Combine(args.TargetPath, 
                     Path.GetRelativePath(Path.GetDirectoryName(sourcePath)!, sourceFile)
                         .Replace(Path.DirectorySeparatorChar, FileSystemPath.DirectorySeparatorChar));
 
@@ -56,31 +60,6 @@ internal class Program
                 }
             }
         }
-    }
-
-    private static bool HasOption(string[] args, string option)
-    {
-        foreach (string arg in args)
-        {
-            if (arg.Equals(option, StringComparison.InvariantCultureIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static ushort TryGetOptionValue(string[] args, string option, ushort defaultValue)
-    {
-        foreach (string arg in args)
-        {
-            if (arg.StartsWith($"{option}=", StringComparison.InvariantCultureIgnoreCase))
-            {
-                string valueStr = arg.Substring(option.Length + 1);
-                if (UInt16.TryParse(valueStr, out ushort value))
-                    return value;
-            }
-        }
-        return defaultValue;
     }
 
     private static IEnumerable<string> GetFileNames(string sourcePath, bool includeSubDirectories)

@@ -1,4 +1,6 @@
-﻿using FileSystemInAFile;
+﻿using System.Text.Json.Serialization;
+using FileSystemInAFile;
+using Fs.Cli.Common;
 
 namespace FsDir;
 
@@ -6,37 +8,43 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        if (args.Length < 2)
+        OptionDefinitions optionDefs = new OptionDefinitions();
+        optionDefs.AddUnnamed("FsPath", "Path to the File System file.");
+        optionDefs.AddUnnamed("Path", "Path within the File System to list.");
+        optionDefs.AddNamed("s", "Include subdirectories.");
+
+        ProgramArgs? pargs = OptionsParser.TryParse<ProgramArgs>(optionDefs, args);
+        if (pargs is null || !pargs.IsValid())
         {
-            Console.WriteLine("USAGE: fsdir <fs_filename> <path> <options>");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            Console.WriteLine("  /s    Include subdirectories");
+            optionDefs.PrintUsage("FsDir", "Lists the contents of a directory in a File System file.");
             return;
         }
 
-        string fsFileName = args[0];
-        string path = args[1];
+        Run(pargs);
+    }
 
-        if (!Path.Exists(fsFileName))
+    private static void Run(ProgramArgs args)
+    {        
+        if (!Path.Exists(args.FsPath))
         {
-            Console.WriteLine($"File system file '{fsFileName}' does not exist.");
+            Console.WriteLine($"File system file '{args.FsPath}' does not exist.");
             return;
         }
 
-        using (FileSystem fs = FileSystem.OpenExisting(fsFileName))
+        using (FileSystem fs = FileSystem.OpenExisting(args.FsPath))
         {
-            bool includeSubDirectories = HasOption(args, "/s");
-
+            string path = args.Path;
             if (!path.ContainsAny(['^', '*', '?', '$']) && fs.DirectoryExists(path))
+            {
                 path = FileSystemPath.Combine(path, "*");
+            }
 
             string prevDirectoryName = String.Empty;
             int fileCount = 0;
             int dirCount = 0;
             long totalFileSize = 0;
 
-            foreach (FileSystemEntry entry in GetPathContents(fs, path, includeSubDirectories))
+            foreach (FileSystemEntry entry in GetPathContents(fs, path, args.IncludeSubdirectories))
             {
                 if(!String.Equals(prevDirectoryName, entry.Path, StringComparison.InvariantCultureIgnoreCase))
                 {
@@ -98,16 +106,4 @@ internal class Program
             }
         }
     }
-
-    private static bool HasOption(string[] args, string option)
-    {
-        foreach (string arg in args)
-        {
-            if (arg.Equals(option, StringComparison.InvariantCultureIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
 }

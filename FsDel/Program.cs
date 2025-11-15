@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using FileSystemInAFile;
+using Fs.Cli.Common;
 
 namespace FsDel;
 
@@ -9,18 +11,25 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        if (args.Length != 2)
+        OptionDefinitions optionDefs = new OptionDefinitions();
+        optionDefs.AddUnnamed("FsPath", "Path to the File System file.");
+        optionDefs.AddUnnamed("Path", "Path to the file to delete.");
+
+        ProgramArgs? pargs = OptionsParser.TryParse<ProgramArgs>(optionDefs, args);
+        if (pargs is null || !pargs.IsValid())
         {
-            Console.WriteLine("USAGE: fsdel <fs_filename> <path>");
+            optionDefs.PrintUsage("FsDel");
             return;
         }
 
-        string fsFileName = args[0];
-        string path = args[1];
+        Run(pargs);
+    }
 
-        using(FileSystem fs = FileSystem.OpenExisting(fsFileName))
+    private static void Run(ProgramArgs args)
+    {
+        using (FileSystem fs = FileSystem.OpenExisting(args.FsPath))
         {
-            fs.Delete(path);
+            fs.Delete(args.Path);
         }
     }
 }

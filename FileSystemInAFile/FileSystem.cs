@@ -12,10 +12,12 @@ public class FileSystem : IDisposable
 {
     #region Construction
 
-    private FileSystem(Stream stream)
+    private FileSystem(string path, Stream stream)
     {
         _stream = stream;
         _pageManager = new PageManager(stream);
+
+        this.Path = System.IO.Path.GetFullPath(path);
     }
 
     ~FileSystem() =>
@@ -35,6 +37,8 @@ public class FileSystem : IDisposable
     #endregion
 
     #region Properties
+
+    public string Path { get; }
 
     internal PageManager PageManager => _pageManager;
 
@@ -64,7 +68,7 @@ public class FileSystem : IDisposable
     public static FileSystem OpenExisting(string path)
     {
         Stream stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        return new FileSystem(stream);
+        return new FileSystem(path, stream);
     }
 
     public Stream Open(string path, FileSystemFileMode mode)
@@ -133,8 +137,10 @@ public class FileSystem : IDisposable
         {
             string data = JsonSerializer.Serialize(new
             {
+                Path = this.Path,
                 TotalPages = GetPageCount(),
-                PageSize = _pageManager.PageSize
+                PageSize = _pageManager.PageSize,
+                FileSize = _stream.Length
             });
             
             return new MemoryStream(Encoding.UTF8.GetBytes(data), writable: false);

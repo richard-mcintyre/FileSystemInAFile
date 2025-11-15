@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using FileSystemInAFile;
+using Fs.Cli.Common;
 
 namespace FsPageDump;
 
@@ -15,47 +16,42 @@ internal class Program
 
     static void Main(string[] args)
     {
-        if (args.Length < 2)
+        OptionDefinitions optionDefs = new OptionDefinitions();
+        optionDefs.AddUnnamed("Path", "Path to the File System file.");
+        optionDefs.AddUnnamed("Pages", "Comma separated list of page numbers or ranges (e.g. 1,2,5-10,18-*).");
+        optionDefs.AddNamed("hex", "Dump the page contents in hex format.");
+        optionDefs.AddNamedWithValue("hex", "Dump the page contents in hex format with the specified number of bytes per line (default is 16).");
+
+        ProgramArgs? pargs = OptionsParser.TryParse<ProgramArgs>(optionDefs, args);
+        if (pargs is null)
         {
-            Console.WriteLine("USAGE: fspagedump <fs_filename> <pages>");
-            Console.WriteLine("  pages: comma separated list of page numbers or ranges (e.g. 1,2,5-10,18-*)");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            Console.WriteLine("  /hex[=bytes per line]    Dump the page contents");
+            optionDefs.PrintUsage("FsPageDump");
             return;
         }
 
-        string fsFileName = args[0];
-        Range[] ranges = ParseRanges(args[1]).OrderBy(o => o.Start.Value).ToArray();
+        Run(pargs);
+    }
 
-        if (!Path.Exists(fsFileName))
+    private static void Run(ProgramArgs args)
+    {
+        if (!Path.Exists(args.Path))
         {
-            Console.WriteLine($"File system file '{fsFileName}' does not exist.");
+            Console.WriteLine($"File system file '{args.Path}' does not exist.");
             return;
         }
 
-        using (FileSystem fs = FileSystem.OpenExisting(fsFileName))
+        Range[] ranges = ParseRanges(args.Pages).OrderBy(o => o.Start.Value).ToArray();
+
+        if(args.BytesPerLine.HasValue && args.BytesPerLine.Value == 0)
+            args = args with { BytesPerLine = 16 };
+
+        using (FileSystem fs = FileSystem.OpenExisting(args.Path))
         {
             FileSystemInfo fsInfo;
 
             using (Stream stream = fs.Open("$fs.info$", FileSystemFileMode.Read))
             {                
-                //var val = JsonSerializer.Deserialize<object>(stream);
-                //Console.WriteLine(val);
-
                 fsInfo = JsonSerializer.Deserialize<FileSystemInfo>(stream)!;
-            }
-
-            bool dumpHex = HasOption(args, "/hex");
-            int bytesPerLine = 16;
-            if (!dumpHex)
-            {
-                int tmp = TryGetOptionValue(args, "/hex", 0);
-                if(tmp > 0)
-                {
-                    dumpHex = true;
-                    bytesPerLine = tmp;
-                }
             }
 
             Console.WriteLine($"Total Pages: {fsInfo.TotalPages}");
@@ -65,8 +61,6 @@ internal class Program
             HashSet<uint> pageIdsDumped = new HashSet<uint>();
             foreach ((int offset, int length) in ranges.Select(o => o.GetOffsetAndLength((int)fsInfo.TotalPages)))
             {
-                //Console.WriteLine($"Offset: {offset}, Length: {length}");
-
                 for (uint curPageId = (uint)offset; curPageId < offset + length; curPageId++)
                 {
                     if (pageIdsDumped.Contains(curPageId))
@@ -91,9 +85,9 @@ internal class Program
                         Console.WriteLine($"Page: {curPageId,-10} {pageKindAsString}     Next Page: {pageInfo.NextPageId}");
                     }
 
-                    if (dumpHex)
+                    if (args.BytesPerLine.HasValue)
                     {
-                        DumpPageContents(fs, curPageId, bytesPerLine);
+                        DumpPageContents(fs, curPageId, args.BytesPerLine.Value);
                         Console.WriteLine();
                     }
                 }
@@ -171,31 +165,5 @@ internal class Program
                 }
             }
         }
-    }
-
-    private static bool HasOption(string[] args, string option)
-    {
-        foreach (string arg in args)
-        {
-            if (arg.Equals(option, StringComparison.InvariantCultureIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static int TryGetOptionValue(string[] args, string option, int defaultValue)
-    {
-        foreach (string arg in args)
-        {
-            if (arg.StartsWith($"{option}=", StringComparison.InvariantCultureIgnoreCase))
-            {
-                string valueStr = arg.Substring(option.Length + 1);
-                if (Int32.TryParse(valueStr, out int value))
-                    return value;
-            }
-        }
-
-        return defaultValue;
     }
 }
