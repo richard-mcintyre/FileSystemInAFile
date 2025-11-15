@@ -32,7 +32,6 @@ internal class DirCommand : CommandBase<DirCommand.CommandOptions>
         DirectoryListingWriter writer = new DirectoryListingWriter(settings.FileSystem);
         writer.Write(options.Path, options.IncludeSubdirectories, settings.StdOut);
 
-
         return null;
     }
 }
